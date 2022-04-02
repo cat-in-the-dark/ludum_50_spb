@@ -16,8 +16,10 @@ endif ()
 add_subdirectory(libs/raylib)
 
 add_executable(${PROJECT_NAME}
+    src/collisions.c
+    src/game_screen.c
     src/main.c
-    src/game_screen.c)
+    )
 target_link_libraries(${PROJECT_NAME} PRIVATE raylib)
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC ASSETS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/") # Set the asset path macro to the absolute path on the dev machine
