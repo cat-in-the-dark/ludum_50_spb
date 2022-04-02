@@ -72,9 +72,15 @@ bool CheckCollisionBoxTriangle(BoundingBox box, Triangle triangle) {
         Vector3Subtract(triangle.p3, triangle.p1)
     };
 
+    float epsilon = 0.000001f;
+
     for (int i = 0; i < 3; i++) {
         for (int j = 0; j < 3; j++) {
             Vector3 axis = Vector3CrossProduct(triangleEdges[i], boxNormals[j]);
+            if (Vector3Length(axis) < epsilon) {
+                continue;
+            }
+
             ProjectBoundingBox(box, axis, &boxMin, &boxMax);
             Project(3, (Vector3*)&triangle, axis, &triangleMin, &triangleMax);
             if (boxMax <= triangleMin || boxMin >= triangleMax) {
