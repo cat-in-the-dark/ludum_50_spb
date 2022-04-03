@@ -64,17 +64,17 @@ Balance balance[LAST];
 
 Building buildings[MAX_BUILDINGS];
 
-int totalFood;
-int totalConcrete;
+int g_totalFood;
+int g_totalConcrete;
 
-int powerCapacity;
-int powerUsage;
-int powerRequired;
+int g_powerCapacity;
+int g_powerUsage;
+int g_powerRequired;
 
-int totalPopulation;
+int g_totalPopulation;
 int populationCapacity;
 
-int gameTicks;
+int g_gameTicks;
 
 int sign(int x) {
     return (x > 0) - (x < 0);
@@ -149,10 +149,7 @@ void addConcreteFactory(int x, int y) {
 void initBuildings() {
     addHouse(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
     addHouse(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
-    addFarm(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
-    addFarm(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
     addPowerPlant(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
-    addFarm(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
     addFarm(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
     addConcreteFactory(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
 }
@@ -196,13 +193,14 @@ void initBalance() {
 }
 
 void game_init() {
-    gameTicks = 0;
-    totalFood = 1000;
-    totalConcrete = 200;
-    totalPopulation = 100;
-    powerUsage = 0;
-    powerCapacity = 0;
-    powerRequired = 0;
+    g_gameTicks = 0;
+    g_totalFood = 1000;
+    g_totalConcrete = 200;
+    g_totalPopulation = 100;
+    g_powerUsage = 0;
+    g_powerCapacity = 0;
+    g_powerRequired = 0;
+    g_waterLevel = 0;
 
     memset(buildings, 0, sizeof(buildings));
     initBalance();
@@ -219,18 +217,18 @@ void updatePower() {
         }
     }
 
-    powerCapacity = power;
+    g_powerCapacity = power;
 }
 
 void updateResources() {
     int foodIncrement = 0;
     int concreteIncrement = 0;
-    int powerLeft = powerCapacity;
-    powerRequired = 0;
+    int powerLeft = g_powerCapacity;
+    g_powerRequired = 0;
 
     for (int i = 0; i < MAX_BUILDINGS; i++) {
         if (buildings[i].type != BUILDING_INVALID) {
-            powerRequired += buildings[i].powerConsumption;
+            g_powerRequired += buildings[i].powerConsumption;
             if (powerLeft >= buildings[i].powerConsumption) {
                 powerLeft -= buildings[i].powerConsumption;
                 buildings[i].powered = true;
@@ -246,9 +244,9 @@ void updateResources() {
         }
     }
 
-    totalFood += foodIncrement;
-    totalConcrete += concreteIncrement;
-    powerUsage = powerCapacity - powerLeft;
+    g_totalFood += foodIncrement;
+    g_totalConcrete += concreteIncrement;
+    g_powerUsage = g_powerCapacity - powerLeft;
 }
 
 void updatePopulation() {
@@ -261,37 +259,37 @@ void updatePopulation() {
         }
     }
 
-    int delta = totalFood - totalPopulation;
+    int delta = g_totalFood - g_totalPopulation;
     if (abs(delta) > BALANCE_POPULATION_INCREMENT) {
         delta = sign(delta) * BALANCE_POPULATION_INCREMENT;
     }
 
-    printf("Food: %d; Pop: %d; delta: %d\n", totalFood, totalPopulation, delta);
+    printf("Food: %d; Pop: %d; delta: %d\n", g_totalFood, g_totalPopulation, delta);
 
-    totalPopulation += delta;
-    if (totalPopulation < 0) {
-        totalPopulation = 0;
-    } else if (totalPopulation > housingCapacity) {
-        totalPopulation = housingCapacity;
+    g_totalPopulation += delta;
+    if (g_totalPopulation < 0) {
+        g_totalPopulation = 0;
+    } else if (g_totalPopulation > housingCapacity) {
+        g_totalPopulation = housingCapacity;
     }
 
-    totalFood -= totalPopulation;
-    if (totalFood < 0) {
-        totalFood = 0;
+    g_totalFood -= g_totalPopulation;
+    if (g_totalFood < 0) {
+        g_totalFood = 0;
     }
 
-    printf("After: %d / %d\n", totalFood, totalPopulation);
+    printf("After: %d / %d\n", g_totalFood, g_totalPopulation);
 }
 
 screen_t game_update() {
-    gameTicks++;
-    if (gameTicks % 30 == 0) {
+    g_gameTicks++;
+    if (g_gameTicks % 30 == 0) {
         updatePower();
         updateResources();
         updatePopulation();
     }
     
-    if (totalPopulation <= 0) {
+    if (g_totalPopulation <= 0) {
         return game_over_screen;
     } else {
         return game_screen;
@@ -307,7 +305,7 @@ void game_draw() {
     }
     
     DrawText(TextFormat("Food: %d; Concrete: %d; power: %d/%d;\npopulation: %d",
-        totalFood, totalConcrete, powerRequired, powerCapacity, totalPopulation),
+        g_totalFood, g_totalConcrete, g_powerRequired, g_powerCapacity, g_totalPopulation),
         10, 42, 32, BLACK);
 
     DrawFPS(10, 10);
