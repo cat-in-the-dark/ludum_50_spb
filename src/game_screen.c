@@ -44,11 +44,11 @@ typedef struct {
 
 typedef struct Building_ {
     BuildingType type;
-    float powerConsumption;
+    int powerConsumption;
     Rectangle body;
     void (*draw)(struct Building_*);
     ResourceType resource;
-    float productionRate;
+    int productionRate;
     union {
         char padding[4];
         int peopleCapacity;
@@ -60,18 +60,16 @@ Balance balance[LAST];
 
 Building buildings[MAX_BUILDINGS];
 
-float totalFood;
-float totalConcrete;
+int totalFood;
+int totalConcrete;
 
-float powerCapacity;
-float powerUsage;
+int powerCapacity;
+int powerUsage;
 
-float population;
-float populationCapacity;
+int totalPopulation;
+int populationCapacity;
 
-// Init
-
-// Update
+int gameTicks;
 
 void flashError() {
     // TODO: show error on screen somehow
@@ -145,9 +143,9 @@ void initBuildings() {
 void initBalance() {
     balance[HOUSE] = (Balance) {
         .price = 40,
-        .powerConsumption = 30,
+        .powerConsumption = 20,
         .resource = RES_INVALID,
-        .productionRate = 0.0f,
+        .productionRate = 0,
         .width = 50,
         .height = 50
     };
@@ -156,7 +154,7 @@ void initBalance() {
         .price = 20,
         .powerConsumption = 10,
         .resource = FOOD,
-        .productionRate = 2.0f,
+        .productionRate = 50,
         .width = 50,
         .height = 25
     };
@@ -165,7 +163,7 @@ void initBalance() {
         .price = 100,
         .powerConsumption = 50,
         .resource = CONCRETE,
-        .productionRate = 10.0f,
+        .productionRate = 10,
         .width = 75,
         .height = 25
     };
@@ -174,23 +172,100 @@ void initBalance() {
         .price = 50,
         .powerConsumption = 0,
         .resource = RES_INVALID,
-        .productionRate = 0.0f,
+        .productionRate = 0,
         .width = 25,
         .height = 50
     };
 }
 
 void game_init() {
+    gameTicks = 0;
+    totalFood = 0;
+    totalConcrete = 200;
+    totalPopulation = 0;
+    powerUsage = 0;
+    powerCapacity = 0;
+
     memset(buildings, 0, sizeof(buildings));
     initBalance();
     initBuildings();
-    totalFood = 0;
-    totalConcrete = 200;
-    population = 0;
+
     printf("%s called\n", __FUNCTION__);
 }
 
+void updatePower() {
+    float power = 0;
+    for (int i = 0; i < MAX_BUILDINGS; i++) {
+        if (buildings[i].type == POWER_PLANT) {
+            power += buildings[i].powerProduction;
+        }
+    }
+
+    powerCapacity = power;
+}
+
+void updateResources() {
+    float foodIncrement = 0;
+    float concreteIncrement = 0;
+    float powerLeft = powerCapacity;
+
+    for (int i = 0; i < MAX_BUILDINGS; i++) {
+        if (powerLeft <= 0) {
+            break;
+        }
+        
+        if (buildings[i].type != BUILDING_INVALID) {
+            powerLeft -= buildings[i].powerConsumption;
+        }
+
+        if (buildings[i].resource == FOOD) {
+            foodIncrement += buildings[i].productionRate;
+        } else if (buildings[i].resource == CONCRETE) {
+            concreteIncrement += buildings[i].productionRate;
+        }
+    }
+    
+    totalFood += foodIncrement;
+    totalConcrete += concreteIncrement;
+    powerUsage = powerCapacity - powerLeft;
+}
+
+void updatePopulation() {
+    // calculate how many people we can feed
+    int housingCapacity = 0;
+    // calculate maximum people capacity
+    for (int i = 0; i < MAX_BUILDINGS; i++) {
+        if (buildings[i].type == HOUSE) {
+            housingCapacity += buildings[i].peopleCapacity;
+        }
+    }
+
+    int delta = (totalFood - totalPopulation) / 2;
+    printf("Food: %d; Pop: %d; delta: %d\n", totalFood, totalPopulation, delta);
+
+    totalPopulation += delta;
+    if (totalPopulation < 0) {
+        totalPopulation = 0;
+    } else if (totalPopulation > housingCapacity) {
+        totalPopulation = housingCapacity;
+    }
+
+    totalFood -= totalPopulation;
+    if (totalFood < 0) {
+        totalFood = 0;
+    }
+
+    printf("After: %d / %d\n", totalFood, totalPopulation);
+}
+
 screen_t game_update() {
+    gameTicks++;
+    if (gameTicks % 30 == 0) {
+        updatePower();
+        updateResources();
+        updatePopulation();
+    }
+    
     return game_screen;
 }
 
@@ -202,6 +277,10 @@ void game_draw() {
         }
     }
     
+    DrawText(TextFormat("Food: %d; Concrete: %d; power: %d/%d;\npopulation: %d",
+        totalFood, totalConcrete, powerUsage, powerCapacity, totalPopulation),
+        10, 42, 32, BLACK);
+
     DrawFPS(10, 10);
 }
 
