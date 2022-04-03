@@ -11,6 +11,7 @@
 #include "game_over_screen.h"
 
 #define MAX_BUILDINGS 255
+#define MAX_PLATFORMS 255
 
 #define BALANCE_POWER_PRODUCTION    100
 #define BALANCE_PEOPLE_CAPACITY     100
@@ -18,6 +19,45 @@
 #define BALANCE_WATER_LEVEL_SPEED   0.05f
 #define BALANCE_WATER_START_POS     SCREEN_HEIGHT
 #define BALANCE_MAP_WIDTH           SCREEN_WIDTH
+#define BALANCE_PLATFORM_ANGLE      60
+
+typedef struct {
+    union {
+        struct {
+            Vector2 start;
+            Vector2 end;
+        };
+        Vector2 coords[2];
+    };
+} Line;
+
+typedef struct {
+    union {
+        struct {
+            float x;
+            float y;
+        };
+        Vector2 pos;
+    };
+    float width;
+    float height;
+} MyRectangle;
+
+typedef struct {
+    MyRectangle rect;
+    float angle;
+} RotRectangle;
+
+typedef struct {
+    union {
+        struct {
+            RotRectangle left;
+            RotRectangle right;
+            RotRectangle top;
+        };
+        RotRectangle components[3];
+    };
+} Platform;
 
 typedef enum {
     BUILDING_INVALID=0,
@@ -67,6 +107,9 @@ Balance balance[LAST];
 
 Building buildings[MAX_BUILDINGS];
 
+Platform* g_platforms;
+int g_platformsCount;
+
 int g_totalFood;
 int g_totalConcrete;
 
@@ -87,6 +130,55 @@ int sign(int x) {
 
 void flashError() {
     // TODO: show error on screen somehow
+}
+
+Line GetRotRectangleMiddleLine(RotRectangle rotRectangle) {
+    Vector2 startP = {rotRectangle.rect.x, rotRectangle.rect.y};
+    Vector2 lineStart = {rotRectangle.rect.x, rotRectangle.rect.y + rotRectangle.rect.height / 2};
+    Vector2 lineEnd = {rotRectangle.rect.x + rotRectangle.rect.width, rotRectangle.rect.y};
+    Vector2 deltaX = Vector2Subtract(lineStart, startP);
+    deltaX = Vector2Rotate(deltaX, rotRectangle.angle * DEG2RAD);
+    lineStart = Vector2Add(startP, deltaX);
+
+    Vector2 deltaY = Vector2Subtract(lineEnd, startP);
+    deltaY = Vector2Rotate(deltaY, rotRectangle.angle * DEG2RAD);
+    lineEnd = Vector2Add(Vector2Add(startP, deltaX), deltaY);
+    return (Line){lineStart, lineEnd};
+}
+
+Platform GeneratePlatform(int x, int y, int topWidth, int topHeight, int legLength, int legThickness, int legAngle) {
+    // x; y = coordinates of top platform
+    Platform platform;
+    platform.top.rect = (MyRectangle){x, y, topWidth, topHeight};
+    platform.top.angle = 0;
+
+    platform.left.rect = (MyRectangle){x, y, legLength, legThickness};
+    platform.left.angle = 180 - legAngle;
+
+    platform.right.rect = (MyRectangle){x, y, legLength, legThickness};
+    platform.right.angle = legAngle;
+
+    Line topMiddleLine = GetRotRectangleMiddleLine(platform.top);
+    Line leftMiddleLine = GetRotRectangleMiddleLine(platform.left);
+    Line rightMiddleLine = GetRotRectangleMiddleLine(platform.right);
+
+    Vector2 leftDist = Vector2Subtract(topMiddleLine.start, leftMiddleLine.start);
+    platform.left.rect.pos = Vector2Add(leftDist, platform.left.rect.pos);
+
+    Vector2 rightDist = Vector2Subtract(topMiddleLine.end, rightMiddleLine.start);
+    platform.right.rect.pos = Vector2Add(rightDist, platform.right.rect.pos);
+    return platform;
+}
+
+void AddPlatform(Platform platform) {
+    if (g_platforms == NULL) {
+        g_platforms = (Platform*)MemAlloc(sizeof(Platform));
+    } else {
+        g_platforms = (Platform*)MemRealloc(g_platforms, sizeof(Platform) * (g_platformsCount  + 1));
+    }
+
+    g_platforms[g_platformsCount] = platform;
+    g_platformsCount++;
 }
 
 void drawBuilding(Building* building) {
@@ -210,6 +302,12 @@ void game_init() {
     memset(buildings, 0, sizeof(buildings));
     initBalance();
     initBuildings();
+    g_platformsCount = 0;
+    g_platforms = NULL;
+
+    AddPlatform(GeneratePlatform(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT), 150, 10, 100, 10, BALANCE_PLATFORM_ANGLE));
+    AddPlatform(GeneratePlatform(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT), 150, 10, 100, 10, BALANCE_PLATFORM_ANGLE));
+    AddPlatform(GeneratePlatform(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT), 150, 10, 100, 10, BALANCE_PLATFORM_ANGLE));
 
     printf("%s called\n", __FUNCTION__);
 }
@@ -332,8 +430,21 @@ void drawHud() {
     DrawFPS(10, 10);
 }
 
+void DrawPlatform(Platform platform) {
+    for (int i = 0; i < ARR_SIZE(platform.components); i++) {
+        DrawRectanglePro(*(Rectangle*)&platform.components[i].rect, (Vector2){0, 0}, platform.components[i].angle, RED);    
+    }
+}
+
+void DrawPlatforms() {
+    for (int i = 0; i < g_platformsCount; i++) {
+        DrawPlatform(g_platforms[i]);
+    }
+}
+
 void game_draw() {
     ClearBackground(RAYWHITE);
+    DrawPlatforms();
     drawBuildings();
     drawWater();
     drawHud();
@@ -341,6 +452,9 @@ void game_draw() {
 
 void game_close() {
     printf("%s called\n", __FUNCTION__);
+    if (g_platforms != NULL) {
+        MemFree(g_platforms);
+    }
 }
 
 screen_t game_screen = {
