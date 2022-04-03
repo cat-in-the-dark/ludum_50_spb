@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "raylib.h"
@@ -7,11 +8,13 @@
 #include "collisions.h"
 #include "const.h"
 #include "game_screen.h"
+#include "game_over_screen.h"
 
 #define MAX_BUILDINGS 255
 
 #define BALANCE_POWER_PRODUCTION    100
 #define BALANCE_PEOPLE_CAPACITY     100
+#define BALANCE_POPULATION_INCREMENT    10
 
 typedef enum {
     BUILDING_INVALID=0,
@@ -70,6 +73,10 @@ int totalPopulation;
 int populationCapacity;
 
 int gameTicks;
+
+int sign(int x) {
+    return (x > 0) - (x < 0);
+}
 
 void flashError() {
     // TODO: show error on screen somehow
@@ -135,7 +142,7 @@ void addConcreteFactory(int x, int y) {
 void initBuildings() {
     addHouse(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
     addHouse(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
-    addFarm(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
+    // addFarm(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
     addPowerPlant(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
     addConcreteFactory(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
 }
@@ -180,9 +187,9 @@ void initBalance() {
 
 void game_init() {
     gameTicks = 0;
-    totalFood = 0;
+    totalFood = 1000;
     totalConcrete = 200;
-    totalPopulation = 0;
+    totalPopulation = 100;
     powerUsage = 0;
     powerCapacity = 0;
 
@@ -240,7 +247,11 @@ void updatePopulation() {
         }
     }
 
-    int delta = (totalFood - totalPopulation) / 2;
+    int delta = totalFood - totalPopulation;
+    if (abs(delta) > BALANCE_POPULATION_INCREMENT) {
+        delta = sign(delta) * BALANCE_POPULATION_INCREMENT;
+    }
+
     printf("Food: %d; Pop: %d; delta: %d\n", totalFood, totalPopulation, delta);
 
     totalPopulation += delta;
@@ -266,7 +277,11 @@ screen_t game_update() {
         updatePopulation();
     }
     
-    return game_screen;
+    if (totalPopulation <= 0) {
+        return game_over_screen;
+    } else {
+        return game_screen;
+    }
 }
 
 void game_draw() {
