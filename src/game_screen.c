@@ -48,6 +48,7 @@ typedef struct {
 typedef struct Building_ {
     BuildingType type;
     int powerConsumption;
+    bool powered;
     Rectangle body;
     void (*draw)(struct Building_*);
     ResourceType resource;
@@ -68,6 +69,7 @@ int totalConcrete;
 
 int powerCapacity;
 int powerUsage;
+int powerRequired;
 
 int totalPopulation;
 int populationCapacity;
@@ -84,7 +86,12 @@ void flashError() {
 
 void drawBuilding(Building* building) {
     Rectangle body = building->body;
-    DrawRectangleLines(body.x, body.y, body.width, body.height, BLACK);
+    Color color = BLACK;
+    if (!building->powered) {
+        color = RED;
+    }
+
+    DrawRectangleLines(body.x, body.y, body.width, body.height, color);
 }
 
 void addBuilding(Building* building) {
@@ -142,8 +149,11 @@ void addConcreteFactory(int x, int y) {
 void initBuildings() {
     addHouse(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
     addHouse(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
-    // addFarm(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
+    addFarm(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
+    addFarm(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
     addPowerPlant(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
+    addFarm(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
+    addFarm(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
     addConcreteFactory(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
 }
 
@@ -192,6 +202,7 @@ void game_init() {
     totalPopulation = 100;
     powerUsage = 0;
     powerCapacity = 0;
+    powerRequired = 0;
 
     memset(buildings, 0, sizeof(buildings));
     initBalance();
@@ -212,26 +223,29 @@ void updatePower() {
 }
 
 void updateResources() {
-    float foodIncrement = 0;
-    float concreteIncrement = 0;
-    float powerLeft = powerCapacity;
+    int foodIncrement = 0;
+    int concreteIncrement = 0;
+    int powerLeft = powerCapacity;
+    powerRequired = 0;
 
     for (int i = 0; i < MAX_BUILDINGS; i++) {
-        if (powerLeft <= 0) {
-            break;
-        }
-        
         if (buildings[i].type != BUILDING_INVALID) {
-            powerLeft -= buildings[i].powerConsumption;
-        }
+            powerRequired += buildings[i].powerConsumption;
+            if (powerLeft >= buildings[i].powerConsumption) {
+                powerLeft -= buildings[i].powerConsumption;
+                buildings[i].powered = true;
 
-        if (buildings[i].resource == FOOD) {
-            foodIncrement += buildings[i].productionRate;
-        } else if (buildings[i].resource == CONCRETE) {
-            concreteIncrement += buildings[i].productionRate;
+                if (buildings[i].resource == FOOD) {
+                    foodIncrement += buildings[i].productionRate;
+                } else if (buildings[i].resource == CONCRETE) {
+                    concreteIncrement += buildings[i].productionRate;
+                }
+            } else {
+                buildings[i].powered = false;
+            }
         }
     }
-    
+
     totalFood += foodIncrement;
     totalConcrete += concreteIncrement;
     powerUsage = powerCapacity - powerLeft;
@@ -293,7 +307,7 @@ void game_draw() {
     }
     
     DrawText(TextFormat("Food: %d; Concrete: %d; power: %d/%d;\npopulation: %d",
-        totalFood, totalConcrete, powerUsage, powerCapacity, totalPopulation),
+        totalFood, totalConcrete, powerRequired, powerCapacity, totalPopulation),
         10, 42, 32, BLACK);
 
     DrawFPS(10, 10);
