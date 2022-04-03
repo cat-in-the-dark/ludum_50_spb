@@ -15,6 +15,9 @@
 #define BALANCE_POWER_PRODUCTION    100
 #define BALANCE_PEOPLE_CAPACITY     100
 #define BALANCE_POPULATION_INCREMENT    10
+#define BALANCE_WATER_LEVEL_SPEED   0.05f
+#define BALANCE_WATER_START_POS     SCREEN_HEIGHT
+#define BALANCE_MAP_WIDTH           SCREEN_WIDTH
 
 typedef enum {
     BUILDING_INVALID=0,
@@ -75,6 +78,8 @@ int g_totalPopulation;
 int populationCapacity;
 
 int g_gameTicks;
+
+float g_waterLevel;
 
 int sign(int x) {
     return (x > 0) - (x < 0);
@@ -264,8 +269,6 @@ void updatePopulation() {
         delta = sign(delta) * BALANCE_POPULATION_INCREMENT;
     }
 
-    printf("Food: %d; Pop: %d; delta: %d\n", g_totalFood, g_totalPopulation, delta);
-
     g_totalPopulation += delta;
     if (g_totalPopulation < 0) {
         g_totalPopulation = 0;
@@ -277,8 +280,19 @@ void updatePopulation() {
     if (g_totalFood < 0) {
         g_totalFood = 0;
     }
+}
 
-    printf("After: %d / %d\n", g_totalFood, g_totalPopulation);
+void UpdateWaterLevel() {
+    g_waterLevel += BALANCE_WATER_LEVEL_SPEED;
+
+    Rectangle waterRect = {0, BALANCE_WATER_START_POS - g_waterLevel, BALANCE_MAP_WIDTH, g_waterLevel};
+    for (int i = 0; i < MAX_BUILDINGS; i++) {
+        if (buildings[i].type != BUILDING_INVALID) {
+            if (CheckCollisionRecs(buildings[i].body, waterRect)) {
+                buildings[i].type = BUILDING_INVALID;
+            }
+        }
+    }
 }
 
 screen_t game_update() {
@@ -289,6 +303,8 @@ screen_t game_update() {
         updatePopulation();
     }
     
+    UpdateWaterLevel();
+
     if (g_totalPopulation <= 0) {
         return game_over_screen;
     } else {
@@ -296,19 +312,31 @@ screen_t game_update() {
     }
 }
 
-void game_draw() {
-    ClearBackground(RAYWHITE);
+void drawBuildings() {
     for (int i = 0; i < MAX_BUILDINGS; i++) {
         if (buildings[i].type != BUILDING_INVALID) {
             buildings[i].draw(&buildings[i]);
         }
     }
-    
+}
+
+void drawWater() {
+    DrawRectangle(0, BALANCE_WATER_START_POS - g_waterLevel, BALANCE_MAP_WIDTH, g_waterLevel, BLUE);
+}
+
+void drawHud() {
     DrawText(TextFormat("Food: %d; Concrete: %d; power: %d/%d;\npopulation: %d",
         g_totalFood, g_totalConcrete, g_powerRequired, g_powerCapacity, g_totalPopulation),
         10, 42, 32, BLACK);
 
     DrawFPS(10, 10);
+}
+
+void game_draw() {
+    ClearBackground(RAYWHITE);
+    drawBuildings();
+    drawWater();
+    drawHud();
 }
 
 void game_close() {
