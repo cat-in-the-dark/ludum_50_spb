@@ -9,12 +9,16 @@
 #include "game_screen.h"
 
 #define MAP_W           16
-#define MAP_H           16
-#define MAP_Z           8
-#define MAP_CELLS_X     3
-#define MAP_CELLS_Y     3
+#define MAP_L           16
+#define MAP_H           8
+#define MAP_CELLS_X     5
+#define MAP_CELLS_Y     5
 
 #define BOX_SIZE        1.0f
+
+#define WATER_W         (int)(MAP_W/BOX_SIZE)
+#define WATER_L         (int)(MAP_L/BOX_SIZE)
+#define WATER_H         (int)(MAP_H/BOX_SIZE)
 
 Camera camera;
 Texture2D texture;
@@ -26,6 +30,16 @@ RayCollision modelCollision;
 
 TriangleCollisionInfo info;
 Vector3 boxPos;
+
+int waterUpdateCounter;
+
+typedef enum {
+    EMPTY=0,
+    FILLED,
+    OCCUPIED
+} CellState;
+
+CellState water[WATER_W][WATER_H][WATER_L];
 
 void TranslateModel(Model* model, Vector3 pos) {
     // Matrix, 4x4 components, column major, OpenGL style, right handed
@@ -43,25 +57,59 @@ void TranslateModel(Model* model, Vector3 pos) {
     model->transform.m14 = pos.z;
 }
 
+TriangleCollisionInfo CheckWaterBox(int i, int j, int k) {
+    Vector3 boxHalf = {BOX_SIZE/2, BOX_SIZE/2, BOX_SIZE/2};
+    Vector3 boxPos = Vector3Add((Vector3){i*BOX_SIZE, j*BOX_SIZE, k*BOX_SIZE}, mapPosition);
+    BoundingBox testBox = {Vector3Subtract(boxPos, boxHalf), Vector3Add(boxPos, boxHalf)};
+    return CheckCollisionBoxMesh(testBox, mesh, model.transform);
+}
+
+void InitWater() {
+    for (int i = 0; i < WATER_W; i++) {
+        for (int j = 0; j < WATER_H; j++) {
+            for (int k = 0; k < WATER_L; k++) {
+                TriangleCollisionInfo info = CheckWaterBox(i, j-1, k);
+                if (info.hit) {
+                    water[i][j-1][k] = OCCUPIED;
+                }
+            }
+        }
+    }
+}
+
 void game_init() {
     printf("%s called\n", __FUNCTION__);
+
+    waterUpdateCounter = 0;
+
+    // memset(water, 0, sizeof(water));
+    // for (int i = 0; i < WATER_W; i++) {
+    //     for (int j = 0; j < WATER_L; j++) {
+    //         water[i][WATER_H-1][j] = FILLED;
+    //     }
+    // }
+    
+    water[WATER_W-1][WATER_H-1][WATER_L-1] = FILLED;
+
     // Define our custom camera to look into our 3d world
     // camera = (Camera){ { 18.0f, 18.0f, 18.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, 45.0f, 0 };
     camera = (Camera){ { 18.0f, 18.0f, 18.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, 45.0f, 0 };
 
     // Image image = LoadImage("../assets/heightmap.png");             // Load heightmap image (RAM)
-    Image image = GenImageCellular(MAP_CELLS_X, MAP_CELLS_Y, 2);
+    Image image = GenImageCellular(MAP_CELLS_X, MAP_CELLS_Y, 3);
     ImageColorInvert(&image);
     texture = LoadTextureFromImage(image);                // Convert image to texture (VRAM)
 
-    mesh = GenMeshHeightmap(image, (Vector3){ MAP_H, MAP_Z, MAP_W });    // Generate heightmap mesh (RAM and VRAM)
+    mesh = GenMeshHeightmap(image, (Vector3){ MAP_W, MAP_H, MAP_L });    // Generate heightmap mesh (RAM and VRAM)
     // mesh = GenMeshCube(10, 10, 10);
 
     model = LoadModelFromMesh(mesh);                          // Load model from generated mesh
 
     model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = texture;         // Set map diffuse texture
-    mapPosition = (Vector3){ -MAP_W/2.0f, 0.0f, -MAP_H/2.0f };                   // Define model position
+    mapPosition = (Vector3){ -MAP_W/2.0f, 0.0f, -MAP_L/2.0f };                   // Define model position
     TranslateModel(&model, mapPosition);
+
+    InitWater();
 
     boxPos = (Vector3) {0.0f, 0.0f, 0.0f};
 
@@ -75,12 +123,74 @@ void game_init() {
 
     UnloadImage(image);                     // Unload heightmap image from RAM, already uploaded to VRAM
 
-    // SetCameraMode(camera, CAMERA_ORBITAL);  // Set an orbital camera mode
-    SetCameraMode(camera, CAMERA_FREE);  // Set an orbital camera mode
+    SetCameraMode(camera, CAMERA_ORBITAL);  // Set an orbital camera mode
+    // SetCameraMode(camera, CAMERA_FREE);  // Set an orbital camera mode
+}
+
+void UpdateWater() {
+    int fill_count = 0;
+    for (int j = 0; j < WATER_H; j++) {
+        bool filled = false;
+        for (int i = 0; i < WATER_W; i++) {
+            for (int k = 0; k < WATER_L; k++) {
+                if (water[i][j][k] == FILLED) {
+                    // Check the box right below
+                    if (j > 0 && water[i][j-1][k] == EMPTY) {
+                        water[i][j-1][k] = FILLED;
+                        filled = true;
+                        fill_count++;
+                    } else {
+                        // Check neighbouring cells
+                        // i-1; k
+                        if (i > 0 && water[i-1][j][k] == EMPTY) {
+                            // Fill if only cell right below it isn't empty or doesn't exist
+                            if (j == 0 || water[i-1][j-1][k] != EMPTY) {
+                                water[i-1][j][k] = FILLED;
+                                filled = true;
+                                fill_count++;
+                            }
+                        } else if (k > 0 && water[i][j][k-1] == EMPTY) {
+                            if (j == 0 || water[i][j-1][k-1] != EMPTY) {
+                                water[i][j][k-1] = FILLED;
+                                filled = true;
+                                fill_count++;
+                            }
+                        } else if (i < WATER_H - 1 && water[i+1][j][k] == EMPTY) {
+                            if (j == 0 || water[i+1][j-1][k] != EMPTY) {
+                                water[i+1][j][k] = FILLED;
+                                filled = true;
+                                fill_count++;
+                            }
+                        } else if (k < WATER_L -1 && water[i][j][k+1] == EMPTY) {
+                            if (j == 0 || water[i][j-1][k+1] != EMPTY) {
+                                water[i][j][k+1] = FILLED;
+                                filled = true;
+                                fill_count++;
+                            }
+                        }
+                    }
+
+                    if (fill_count > 3) {
+                        return;
+                    }
+                }
+            }
+        }
+
+        if (filled) {
+            break;
+        }
+    }
 }
 
 screen_t game_update() {
     UpdateCamera(&camera);              // Update camera
+
+    waterUpdateCounter++;
+    if (waterUpdateCounter % 30 == 0) {
+        UpdateWater();    
+    }
+
     mouseRay = GetMouseRay(GetMousePosition(), camera);
     modelCollision = GetRayCollisionMesh(mouseRay, mesh, model.transform);
 
@@ -127,7 +237,20 @@ void game_draw() {
             DrawSphere(modelCollision.point, 1, RED);
         }
 
-        DrawCube(boxPos, BOX_SIZE, BOX_SIZE, BOX_SIZE, BLUE);
+
+        for (int i = 0; i < WATER_W; i++) {
+            for (int j = 0; j < WATER_H; j++) {
+                for (int k = 0; k < WATER_L; k++) {
+                    if (water[i][j][k] == FILLED) {
+                        Vector3 cubePos = Vector3Add((Vector3){i*BOX_SIZE, j*BOX_SIZE, k*BOX_SIZE}, mapPosition);
+                        DrawCube(cubePos, BOX_SIZE, BOX_SIZE, BOX_SIZE, BLUE);
+                    // } else if (water[i][j][k] == OCCUPIED) {
+                        // Vector3 cubePos = Vector3Add((Vector3){i*BOX_SIZE, j*BOX_SIZE, k*BOX_SIZE}, mapPosition);
+                        // DrawCube(cubePos, BOX_SIZE, BOX_SIZE, BOX_SIZE, RED);
+                    }
+                }
+            }
+        }
 
         if (info.hit) {
             printf("HIT %f %f %f; %f %f %f; %f %f %f!\n", info.triangle.p1.x, info.triangle.p1.y, info.triangle.p1.z, 
