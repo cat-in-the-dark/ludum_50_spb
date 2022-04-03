@@ -126,3 +126,18 @@ TriangleCollisionInfo CheckCollisionBoxMesh(BoundingBox box, Mesh mesh, Matrix t
 
     return result;
 }
+
+bool CheckCollisionLineRec(Vector2 startPos, Vector2 endPos, Rectangle rec) {
+    // check if the line has hit any of the rectangle's sides
+    // uses the Line/Line function below
+    Vector2 collisionPoint;
+    bool left   = CheckCollisionLines(startPos, endPos, (Vector2) { rec.x, rec.y }, (Vector2) { rec.x, rec.y + rec.height }, &collisionPoint);
+    bool right  = CheckCollisionLines(startPos, endPos, (Vector2) { rec.x + rec.width, rec.y }, (Vector2) { rec.x + rec.width, rec.y + rec.height }, &collisionPoint);
+    bool top    = CheckCollisionLines(startPos, endPos, (Vector2) { rec.x, rec.y }, (Vector2) { rec.x + rec.width, rec.y }, &collisionPoint);
+    bool bottom = CheckCollisionLines(startPos, endPos, (Vector2) { rec.x, rec.y + rec.height }, (Vector2) { rec.x + rec.width, rec.y + rec.height }, &collisionPoint);
+
+    // if ANY of the above are true, the line
+    // has hit the rectangle
+    if (left || right || top || bottom) { return true; }
+    return false;
+}

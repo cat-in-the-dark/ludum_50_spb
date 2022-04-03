@@ -4,6 +4,7 @@
 
 #include "raylib.h"
 #include "raymath.h"
+#include "raygui.h"
 
 #include "collisions.h"
 #include "const.h"
@@ -20,6 +21,8 @@
 #define BALANCE_WATER_START_POS     SCREEN_HEIGHT
 #define BALANCE_MAP_WIDTH           SCREEN_WIDTH
 #define BALANCE_PLATFORM_ANGLE      60
+#define BALANCE_PLATFORM_WIDTH      100
+#define BALANCE_PLATFORM_LEG_LENGTH 75
 
 typedef struct {
     union {
@@ -58,6 +61,18 @@ typedef struct {
         RotRectangle components[3];
     };
 } Platform;
+
+typedef struct {
+    bool hitLeft;
+    bool hitRight;
+    Vector2 pointLeft;
+    Vector2 pointRight;
+} PlatformCollision;
+
+typedef struct {
+    bool active;
+    Platform platform;
+} ActivePlatform;
 
 typedef enum {
     BUILDING_INVALID=0,
@@ -107,6 +122,9 @@ Balance balance[LAST];
 
 Building buildings[MAX_BUILDINGS];
 
+Line g_ground[1];
+
+ActivePlatform g_activePlatform;
 Platform* g_platforms;
 int g_platformsCount;
 
@@ -147,6 +165,7 @@ Line GetRotRectangleMiddleLine(RotRectangle rotRectangle) {
 }
 
 Platform GeneratePlatform(int x, int y, int topWidth, int topHeight, int legLength, int legThickness, int legAngle) {
+    printf("Generate: %d %d %d %d %d %d %d\n", x, y, topWidth, topHeight, legLength, legThickness, legAngle);
     // x; y = coordinates of top platform
     Platform platform;
     platform.top.rect = (MyRectangle){x, y, topWidth, topHeight};
@@ -244,11 +263,20 @@ void addConcreteFactory(int x, int y) {
 }
 
 void initBuildings() {
-    addHouse(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
-    addHouse(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
-    addPowerPlant(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
-    addFarm(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
-    addConcreteFactory(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT));
+    // TODO: stick to the ground properly
+    addHouse(GetRandomValue(0, SCREEN_WIDTH), 420 - balance[HOUSE].height);
+    addHouse(GetRandomValue(0, SCREEN_WIDTH), 420 - balance[HOUSE].height);
+    addPowerPlant(GetRandomValue(0, SCREEN_WIDTH), 420 - balance[POWER_PLANT].height);
+    addFarm(GetRandomValue(0, SCREEN_WIDTH), 420 - balance[FARM].height);
+    addConcreteFactory(GetRandomValue(0, SCREEN_WIDTH), 420 - balance[CONCRETE_FACTORY].height);
+}
+
+void initGround() {
+    // TODO: Fancier generation
+    g_ground[0] = (Line) {
+        (Vector2) {0, 420},
+        (Vector2) {BALANCE_MAP_WIDTH, 420}
+    };
 }
 
 void initBalance() {
@@ -301,13 +329,14 @@ void game_init() {
 
     memset(buildings, 0, sizeof(buildings));
     initBalance();
+    initGround();
     initBuildings();
     g_platformsCount = 0;
     g_platforms = NULL;
 
-    AddPlatform(GeneratePlatform(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT), 150, 10, 100, 10, BALANCE_PLATFORM_ANGLE));
-    AddPlatform(GeneratePlatform(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT), 150, 10, 100, 10, BALANCE_PLATFORM_ANGLE));
-    AddPlatform(GeneratePlatform(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT), 150, 10, 100, 10, BALANCE_PLATFORM_ANGLE));
+    AddPlatform(GeneratePlatform(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT), BALANCE_PLATFORM_WIDTH, 10, BALANCE_PLATFORM_LEG_LENGTH, 10, BALANCE_PLATFORM_ANGLE));
+    AddPlatform(GeneratePlatform(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT), 100, 10, 75, 10, BALANCE_PLATFORM_ANGLE));
+    AddPlatform(GeneratePlatform(GetRandomValue(0, SCREEN_WIDTH), GetRandomValue(0, SCREEN_HEIGHT), 100, 10, 75, 10, BALANCE_PLATFORM_ANGLE));
 
     printf("%s called\n", __FUNCTION__);
 }
@@ -393,6 +422,91 @@ void UpdateWaterLevel() {
     }
 }
 
+PlatformCollision CheckCollisionPlatformGround(Platform platform) {
+    PlatformCollision result = {0};
+    Vector2 collisionPoint = {0};
+
+    Line leftMl = GetRotRectangleMiddleLine(platform.left);
+    Line rightMl = GetRotRectangleMiddleLine(platform.right);
+
+    for (int i = 0; i < ARR_SIZE(g_ground); i++) {
+        if (result.hitLeft && result.hitRight) {
+            return result;
+        }
+
+        if (!result.hitLeft && CheckCollisionLines(g_ground[i].start, g_ground[i].end, leftMl.start, leftMl.end, &collisionPoint)) {
+            result.hitLeft = true;
+            result.pointLeft = collisionPoint;
+        }
+
+        if (!result.hitRight && CheckCollisionLines(g_ground[i].start, g_ground[i].end, rightMl.start, rightMl.end, &collisionPoint)) {
+            result.hitRight = true;
+            result.pointRight = collisionPoint;
+        }
+    }
+
+    return result;
+}
+
+PlatformCollision CheckCollisionPlatforms(Platform pl) {
+    PlatformCollision result = {0};
+    Vector2 collisionPoint = {0};
+
+    Line leftMl = GetRotRectangleMiddleLine(pl.left);
+    Line rightMl = GetRotRectangleMiddleLine(pl.right);
+
+    for (int i = 0; i < g_platformsCount; i++) {
+        for (int j = 0; j < ARR_SIZE(pl.components); j++) {
+            if (result.hitLeft && result.hitRight) {
+                return result;
+            }
+
+            Line targetMl = GetRotRectangleMiddleLine(g_platforms[i].components[j]);
+
+            if (!result.hitLeft && CheckCollisionLines(leftMl.start, leftMl.end, targetMl.start, targetMl.end, &collisionPoint)) {
+                result.hitLeft = true;
+                result.pointLeft = collisionPoint;
+            }
+
+            if (!result.hitRight && CheckCollisionLines(rightMl.start, rightMl.end, targetMl.start, targetMl.end, &collisionPoint)) {
+                result.hitRight = true;
+                result.pointRight = collisionPoint;
+            }
+        }
+    }
+
+    return result;
+}
+
+void UpdateControls() {
+    Vector2 mouse = GetMousePosition();
+
+    if (IsKeyPressed(KEY_P)) {
+        if (!g_activePlatform.active) {
+            g_activePlatform.platform = GeneratePlatform((int)mouse.x, (int)mouse.y, BALANCE_PLATFORM_WIDTH, 10, BALANCE_PLATFORM_LEG_LENGTH, 10, BALANCE_PLATFORM_ANGLE);
+            g_activePlatform.active = true;
+        }
+    }
+
+    if (g_activePlatform.active) {
+        // TODO: convert coordinates from screen to world, when camera added
+        Vector2 dPos = Vector2Subtract(mouse, g_activePlatform.platform.top.rect.pos);
+        g_activePlatform.platform.top.rect.pos = mouse;
+        g_activePlatform.platform.left.rect.pos = Vector2Add(g_activePlatform.platform.left.rect.pos, dPos);
+        g_activePlatform.platform.right.rect.pos = Vector2Add(g_activePlatform.platform.right.rect.pos, dPos);
+
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            PlatformCollision againstPlatforms = CheckCollisionPlatforms(g_activePlatform.platform);
+            PlatformCollision againstGround = CheckCollisionPlatformGround(g_activePlatform.platform);
+
+            if ((againstGround.hitLeft || againstPlatforms.hitLeft) && (againstGround.hitRight || againstPlatforms.hitRight)) {
+                AddPlatform(g_activePlatform.platform);
+                g_activePlatform.active = false;
+            }
+        }
+    }
+}
+
 screen_t game_update() {
     g_gameTicks++;
     if (g_gameTicks % 30 == 0) {
@@ -401,6 +515,7 @@ screen_t game_update() {
         updatePopulation();
     }
     
+    UpdateControls();
     UpdateWaterLevel();
 
     if (g_totalPopulation <= 0) {
@@ -418,6 +533,12 @@ void drawBuildings() {
     }
 }
 
+void drawGround() {
+    for (int i = 0; i < ARR_SIZE(g_ground); i++) {
+        DrawLineV(g_ground[0].start, g_ground[0].end, BLACK);
+    }    
+}
+
 void drawWater() {
     DrawRectangle(0, BALANCE_WATER_START_POS - g_waterLevel, BALANCE_MAP_WIDTH, g_waterLevel, BLUE);
 }
@@ -425,20 +546,26 @@ void drawWater() {
 void drawHud() {
     DrawText(TextFormat("Food: %d; Concrete: %d; power: %d/%d;\npopulation: %d",
         g_totalFood, g_totalConcrete, g_powerRequired, g_powerCapacity, g_totalPopulation),
-        10, 42, 32, BLACK);
+        10, 42, 20, BLACK);
 
     DrawFPS(10, 10);
 }
 
 void DrawPlatform(Platform platform) {
-    for (int i = 0; i < ARR_SIZE(platform.components); i++) {
-        DrawRectanglePro(*(Rectangle*)&platform.components[i].rect, (Vector2){0, 0}, platform.components[i].angle, RED);    
-    }
+    DrawRectangleLines(platform.top.rect.x, platform.top.rect.y, platform.top.rect.width, platform.top.rect.height, BLACK);
+    Line middleLeft = GetRotRectangleMiddleLine(platform.left);
+    Line middleRight = GetRotRectangleMiddleLine(platform.right);
+    DrawLineV(middleLeft.start, middleLeft.end, BLACK);
+    DrawLineV(middleRight.start, middleRight.end, BLACK);
 }
 
 void DrawPlatforms() {
     for (int i = 0; i < g_platformsCount; i++) {
         DrawPlatform(g_platforms[i]);
+    }
+
+    if (g_activePlatform.active) {
+        DrawPlatform(g_activePlatform.platform);
     }
 }
 
@@ -446,6 +573,7 @@ void game_draw() {
     ClearBackground(RAYWHITE);
     DrawPlatforms();
     drawBuildings();
+    drawGround();
     drawWater();
     drawHud();
 }
