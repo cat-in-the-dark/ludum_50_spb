@@ -34,3 +34,9 @@ add_executable(perlin
     )
 
 target_link_libraries(perlin PRIVATE raylib raygui)
+
+add_executable(${PROJECT_NAME}_experiment
+    src/test_liquid.c
+    )
+
+target_link_libraries(${PROJECT_NAME}_experiment PRIVATE raylib raygui)
