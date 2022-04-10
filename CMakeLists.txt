@@ -22,6 +22,7 @@ add_subdirectory(libs/raygui/projects/CMake)
 add_executable(${PROJECT_NAME}
     src/collisions.c
     src/game_screen.c
+    src/game_screen_3d.c
     src/game_over_screen.c
     src/main.c
     )
