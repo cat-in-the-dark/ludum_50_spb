@@ -11,21 +11,44 @@
 #define H   SCREEN_HEIGHT - 60
 #define CELL_SIZE   32.0f
 
-/* Create pseudorandom direction vector
- */
+#define GRID_SIZE 128
+
+typedef struct {
+    bool occupied;
+    Vector2 coords;
+} GradientCell;
+
+GradientCell gradients[GRID_SIZE][GRID_SIZE];
+
 Vector2 randomGradient(int ix, int iy) {
-    // No precomputed gradients mean this works for any number of grid coordinates
-    const unsigned w = 8 * sizeof(unsigned);
-    const unsigned s = w / 2; // rotation width
-    unsigned a = ix, b = iy;
-    a *= 3284157443; b ^= a << s | a >> w-s;
-    b *= 1911520717; a ^= b << s | b >> w-s;
-    a *= 2048419325;
-    float random = a * (3.14159265 / ~(~0u >> 1)); // in [0, 2*Pi]
-    Vector2 v;
-    v.x = cosf(random); v.y = sinf(random);
-    return v;
+    // assert(ix < GRID_SIZE);
+    // assert(iy < GRID_SIZE);
+
+    if (!gradients[ix][iy].occupied) {
+        float angle = Remap(GetRandomValue(0, 1000), 0, 1000, 0.0, PI * 2);
+        gradients[ix][iy].coords.x = cosf(angle);
+        gradients[ix][iy].coords.y = sinf(angle);
+        gradients[ix][iy].occupied = true;
+    }
+
+    return gradients[ix][iy].coords;
 }
+
+// /* Create pseudorandom direction vector
+//  */
+// Vector2 randomGradient(int ix, int iy) {
+//     // No precomputed gradients mean this works for any number of grid coordinates
+//     const unsigned w = 8 * sizeof(unsigned);
+//     const unsigned s = w / 2; // rotation width
+//     unsigned a = ix, b = iy;
+//     a *= 3284157443; b ^= a << s | a >> w-s;
+//     b *= 1911520717; a ^= b << s | b >> w-s;
+//     a *= 2048419325;
+//     float random = a * (3.14159265 / ~(~0u >> 1)); // in [0, 2*Pi]
+//     Vector2 v;
+//     v.x = cosf(random); v.y = sinf(random);
+//     return v;
+// }
 
 // Computes the dot product of the distance and gradient vectors.
 float dotGridGradient(int ix, int iy, float x, float y) {

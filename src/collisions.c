@@ -117,7 +117,7 @@ TriangleCollisionInfo CheckCollisionBoxMesh(BoundingBox box, Mesh mesh, Matrix t
 
         Triangle test = {a, b, c};
         if (CheckCollisionBoxTriangle(box, test)) {
-            printf("Hit %d/%d\n", i, mesh.triangleCount);
+            // printf("Hit %d/%d\n", i, mesh.triangleCount);
             result.hit = true;
             result.triangle = test;
             return result;

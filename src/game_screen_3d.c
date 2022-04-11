@@ -39,7 +39,28 @@ typedef enum {
     OCCUPIED
 } CellState;
 
-CellState water[WATER_W][WATER_H][WATER_L];
+CellState water[WATER_W+2][WATER_H+2][WATER_L+2];
+float mass[WATER_W+2][WATER_H+2][WATER_L+2];
+float new_mass[WATER_W+2][WATER_H+2][WATER_L+2];
+
+//Water properties
+float MaxMass = 1.0f; //The normal, un-pressurized mass of a full water cell
+float MaxCompress = 0.1f; //How much excess water a cell can store, compared to the cell above it
+float MinMass = 0.0001f;  //Ignore cells that are almost dry
+float MinFlow = 0.1f;
+float MinDraw = 0.05f;
+float MaxSpeed = 4.0f;   //max units of water moved out of one block to another, per timestep
+
+float get_stable_state_b(float total_mass) {
+    if (total_mass <= 1) {
+        return 1.0f;
+    } else if (total_mass < 2 * MaxMass + MaxCompress) {
+        // if the top cell contains less than MaxMass units of water, the bottom cell will contain a proportionally smaller excess amount
+        return (MaxMass * MaxMass + total_mass * MaxCompress) / (MaxMass + MaxCompress);
+    } else {
+        return (total_mass + MaxCompress) / 2;
+    }
+}
 
 void TranslateModel(Model* model, Vector3 pos) {
     // Matrix, 4x4 components, column major, OpenGL style, right handed
@@ -65,12 +86,12 @@ TriangleCollisionInfo CheckWaterBox(int i, int j, int k) {
 }
 
 void InitWater() {
-    for (int i = 0; i < WATER_W; i++) {
-        for (int j = 0; j < WATER_H; j++) {
-            for (int k = 0; k < WATER_L; k++) {
-                TriangleCollisionInfo info = CheckWaterBox(i, j-1, k);
+    for (int i = 0; i < WATER_W+2; i++) {
+        for (int j = 0; j < WATER_H+2; j++) {
+            for (int k = 0; k < WATER_L+2; k++) {
+                TriangleCollisionInfo info = CheckWaterBox(i, j, k);
                 if (info.hit) {
-                    water[i][j-1][k] = OCCUPIED;
+                    water[i][j][k] = OCCUPIED;
                 }
             }
         }
@@ -83,13 +104,19 @@ void game_init_3d() {
     waterUpdateCounter = 0;
 
     // memset(water, 0, sizeof(water));
-    // for (int i = 0; i < WATER_W; i++) {
-    //     for (int j = 0; j < WATER_L; j++) {
-    //         water[i][WATER_H-1][j] = FILLED;
-    //     }
-    // }
+    for (int i = 0; i < WATER_W; i++) {
+        for (int j = 0; j < WATER_L; j++) {
+            water[i][0][j] = OCCUPIED;
+            water[i][WATER_H-1][j] = FILLED;
+            mass[i][WATER_H-1][j] = 1.0;
+            new_mass[i][WATER_H-1][j] = 1.0;
+            // water[i][1][j] = OCCUPIED;
+        }
+    }
     
     water[WATER_W-1][WATER_H-1][WATER_L-1] = FILLED;
+    mass[WATER_W-1][WATER_H-1][WATER_L-1] = 1.0;
+    new_mass[WATER_W-1][WATER_H-1][WATER_L-1] = 1.0;
 
     // Define our custom camera to look into our 3d world
     // camera = (Camera){ { 18.0f, 18.0f, 18.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, 45.0f, 0 };
@@ -128,57 +155,145 @@ void game_init_3d() {
 }
 
 void UpdateWater() {
-    int fill_count = 0;
-    for (int j = 0; j < WATER_H; j++) {
-        bool filled = false;
-        for (int i = 0; i < WATER_W; i++) {
-            for (int k = 0; k < WATER_L; k++) {
-                if (water[i][j][k] == FILLED) {
-                    // Check the box right below
-                    if (j > 0 && water[i][j-1][k] == EMPTY) {
-                        water[i][j-1][k] = FILLED;
-                        filled = true;
-                        fill_count++;
-                    } else {
-                        // Check neighbouring cells
-                        // i-1; k
-                        if (i > 0 && water[i-1][j][k] == EMPTY) {
-                            // Fill if only cell right below it isn't empty or doesn't exist
-                            if (j == 0 || water[i-1][j-1][k] != EMPTY) {
-                                water[i-1][j][k] = FILLED;
-                                filled = true;
-                                fill_count++;
-                            }
-                        } else if (k > 0 && water[i][j][k-1] == EMPTY) {
-                            if (j == 0 || water[i][j-1][k-1] != EMPTY) {
-                                water[i][j][k-1] = FILLED;
-                                filled = true;
-                                fill_count++;
-                            }
-                        } else if (i < WATER_H - 1 && water[i+1][j][k] == EMPTY) {
-                            if (j == 0 || water[i+1][j-1][k] != EMPTY) {
-                                water[i+1][j][k] = FILLED;
-                                filled = true;
-                                fill_count++;
-                            }
-                        } else if (k < WATER_L -1 && water[i][j][k+1] == EMPTY) {
-                            if (j == 0 || water[i][j-1][k+1] != EMPTY) {
-                                water[i][j][k+1] = FILLED;
-                                filled = true;
-                                fill_count++;
-                            }
-                        }
+    float flow = 0;
+    float remaining_mass;
+
+    for (int x = 0; x < MAP_W; x++) {
+        for (int y = 0; y < MAP_H; y++) {
+            for (int z = 0; z < MAP_L; z++) {
+                if (water[x][y][z] == OCCUPIED) {
+                    continue;
+                }
+
+                flow = 0;
+                remaining_mass = mass[x][y][z];
+                if (remaining_mass <= 0) {
+                    continue;
+                }
+
+                // Below
+                if (water[x][y-1][z] != OCCUPIED) {
+                    flow = get_stable_state_b(remaining_mass + mass[x][y-1][z]) - mass[x][y-1][z];
+                    if (flow > MinFlow) {
+                        flow *= 0.5;
+                    }
+                    flow = Clamp(flow, 0, fmin(MaxSpeed, remaining_mass));
+
+                    new_mass[x][y][z] -= flow;
+                    new_mass[x][y-1][z] += flow;
+
+                    remaining_mass -= flow;
+                }
+
+                if (remaining_mass <= 0) {
+                    continue;
+                }
+
+                // Left
+                if (water[x-1][y][z] != OCCUPIED) {
+                    // Equalize the amount of water in this block and it's neighbour
+                    flow = (mass[x][y][z] - mass[x-1][y][z]) / 4;
+                    if (flow > MinFlow) {
+                        flow *= 0.5;
+                    }
+                    flow = Clamp(flow, 0, remaining_mass);
+
+                    // printf("[%d;%d;%d]: %.2f -> [LEFT]: %.2f: %f\n", x, y, z, new_mass[x][y][z], new_mass[x-1][y][z], flow);
+                    new_mass[x][y][z] -= flow;
+                    new_mass[x-1][y][z] += flow;
+                    remaining_mass -= flow;
+                }
+
+                if (remaining_mass <= 0) {
+                    continue;
+                }
+                
+                // Right
+                if (water[x+1][y][z] != OCCUPIED) {
+                    flow = (mass[x][y][z] - mass[x+1][y][z]) / 4;
+                    if (flow > MinFlow) {
+                        flow *= 0.5;
+                    }
+                    flow = Clamp(flow, 0, remaining_mass);
+
+                    new_mass[x][y][z] -= flow;
+                    new_mass[x+1][y][z] += flow;
+                    remaining_mass -= flow;
+                }
+
+                if (remaining_mass <= 0) {
+                    continue;
+                }
+                
+                // Front
+                if (water[x][y][z-1] != OCCUPIED) {
+                    flow = (mass[x][y][z] - mass[x][y][z-1]) / 4;
+                    if (flow > MinFlow) {
+                        flow *= 0.5;
+                    }
+                    flow = Clamp(flow, 0, remaining_mass);
+
+                    new_mass[x][y][z] -= flow;
+                    new_mass[x][y][z-1] += flow;
+                    remaining_mass -= flow;
+                }
+
+                
+                if (remaining_mass <= 0) {
+                    continue;
+                }
+                
+                // Back
+                if (water[x][y][z+1] != OCCUPIED) {
+                    flow = (mass[x][y][z] - mass[x][y][z+1]) / 4;
+                    if (flow > MinFlow) {
+                        flow *= 0.5;
+                    }
+                    flow = Clamp(flow, 0, remaining_mass);
+
+                    new_mass[x][y][z] -= flow;
+                    new_mass[x][y][z+1] += flow;
+                    remaining_mass -= flow;
+                }
+
+                if (remaining_mass <= 0) {
+                    continue;
+                }
+
+                // Up. Only compressed water flows upwards.
+
+                if (mass[x][y+1][z] != OCCUPIED) {
+                    flow = remaining_mass - get_stable_state_b(remaining_mass + mass[x][y+1][z]);
+                    if (flow > MinFlow) {
+                        flow *= 0.5;
                     }
 
-                    if (fill_count > 3) {
-                        return;
-                    }
+                    flow = Clamp(flow, 0, fmin(MaxSpeed, remaining_mass));
+
+                    // printf("[%d][%d](%.2f) -> [%d][%d](%.2f): %.2f\n", x, y, new_mass[x][y], x, y-1, new_mass[x][y-1], flow);
+                    new_mass[x][y][z] -= flow;
+                    new_mass[x][y+1][z] += flow;
+                    remaining_mass -= flow;
                 }
             }
         }
+    }
 
-        if (filled) {
-            break;
+    memcpy(&mass, &new_mass, sizeof(mass));
+
+    for (int x = 1; x < MAP_W; x++) {
+        for (int y = 1; y < MAP_H; y++) {
+            for (int z = 1; z < MAP_L; z++) {
+                if (water[x][y][z] == OCCUPIED) {
+                    continue;
+                }
+
+                if (mass[x][y][z] > MinMass) {
+                    water[x][y][z] = FILLED;
+                } else {
+                    water[x][y][z] = EMPTY;
+                }
+            }
         }
     }
 }
@@ -187,7 +302,7 @@ screen_t game_update_3d() {
     UpdateCamera(&camera);              // Update camera
 
     waterUpdateCounter++;
-    if (waterUpdateCounter % 30 == 0) {
+    if (waterUpdateCounter % 5 == 0) {
         UpdateWater();    
     }
 
@@ -241,21 +356,25 @@ void game_draw_3d() {
         for (int i = 0; i < WATER_W; i++) {
             for (int j = 0; j < WATER_H; j++) {
                 for (int k = 0; k < WATER_L; k++) {
+                    Vector3 cubePos = Vector3Add((Vector3){i*BOX_SIZE, j*BOX_SIZE, k*BOX_SIZE}, mapPosition);
                     if (water[i][j][k] == FILLED) {
-                        Vector3 cubePos = Vector3Add((Vector3){i*BOX_SIZE, j*BOX_SIZE, k*BOX_SIZE}, mapPosition);
-                        DrawCube(cubePos, BOX_SIZE, BOX_SIZE, BOX_SIZE, BLUE);
+                        Color color = BLUE;
+                        // color.a = (unsigned char)(mass[i][j][k] * 255);
+                        // DrawCube(cubePos, BOX_SIZE, BOX_SIZE, BOX_SIZE, color);
+                        DrawCylinder(cubePos, BOX_SIZE, BOX_SIZE, BOX_SIZE * mass[i][j][k], 4, color);
                     // } else if (water[i][j][k] == OCCUPIED) {
-                        // Vector3 cubePos = Vector3Add((Vector3){i*BOX_SIZE, j*BOX_SIZE, k*BOX_SIZE}, mapPosition);
-                        // DrawCube(cubePos, BOX_SIZE, BOX_SIZE, BOX_SIZE, RED);
+                    //     DrawCubeWires(cubePos, BOX_SIZE, BOX_SIZE, BOX_SIZE, RED);
+                    // } else {
+                    //     DrawCubeWires(cubePos, BOX_SIZE, BOX_SIZE, BOX_SIZE, BLACK);
                     }
                 }
             }
         }
 
         if (info.hit) {
-            printf("HIT %f %f %f; %f %f %f; %f %f %f!\n", info.triangle.p1.x, info.triangle.p1.y, info.triangle.p1.z, 
-                info.triangle.p2.x, info.triangle.p2.y, info.triangle.p2.z, 
-                info.triangle.p3.x, info.triangle.p3.y, info.triangle.p3.z);
+            // printf("HIT %f %f %f; %f %f %f; %f %f %f!\n", info.triangle.p1.x, info.triangle.p1.y, info.triangle.p1.z, 
+            //     info.triangle.p2.x, info.triangle.p2.y, info.triangle.p2.z, 
+            //     info.triangle.p3.x, info.triangle.p3.y, info.triangle.p3.z);
             DrawTriangle3D(info.triangle.p1, info.triangle.p2, info.triangle.p3, RED);
         }
 
