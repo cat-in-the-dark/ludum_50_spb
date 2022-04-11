@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include "game_screen.h"
+#include "game_screen_3d.h"
 #include "game_over_screen.h"
 
 #include "raylib.h"
@@ -11,7 +12,7 @@ void game_over_init() {
 
 screen_t game_over_update() {
     if (IsKeyPressed(KEY_ENTER)) {
-        return game_screen;
+        return game_screen_3d;
     } 
 
     return game_over_screen;
@@ -19,7 +20,7 @@ screen_t game_over_update() {
 
 void game_over_draw() {
     ClearBackground(RAYWHITE);
-    DrawText("GAME OVER!", 10, 10, 32, BLACK);
+    DrawText(" ", 10, 10, 32, BLACK);
 }
 
 void game_over_close() {

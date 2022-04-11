@@ -10,6 +10,7 @@
 #include "const.h"
 #include "screen.h"
 #include "game_screen.h"
+#include "game_over_screen.h"
 #include "game_screen_3d.h"
 
 screen_t current_screen;
@@ -53,13 +54,13 @@ int main(int argc, char const *argv[])
     target = LoadRenderTexture(SCREEN_WIDTH, SCREEN_HEIGHT);
     SetTextureFilter(target.texture, TEXTURE_FILTER_BILINEAR);  // Texture scale filter to use
 
-    current_screen = game_screen_3d;
+    current_screen = game_over_screen;
     current_screen.init();
 
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(UpdateDrawFrame, 60, 1);
 #else
-    SetTargetFPS(60);       // Set our game to run at 60 frames-per-second
+    SetTargetFPS(30);       // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
 
     // Main game loop

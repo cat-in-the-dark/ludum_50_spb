@@ -11,14 +11,14 @@
 #define MAP_W           16
 #define MAP_L           16
 #define MAP_H           8
-#define MAP_CELLS_X     5
-#define MAP_CELLS_Y     5
+#define MAP_CELLS_X     10
+#define MAP_CELLS_Y     10
 
 #define BOX_SIZE        1.0f
 
 #define WATER_W         (int)(MAP_W/BOX_SIZE)
 #define WATER_L         (int)(MAP_L/BOX_SIZE)
-#define WATER_H         (int)(MAP_H/BOX_SIZE)
+#define WATER_H         (int)(MAP_H/BOX_SIZE + 5)
 
 Camera camera;
 Texture2D texture;
@@ -45,7 +45,7 @@ float new_mass[WATER_W+2][WATER_H+2][WATER_L+2];
 
 //Water properties
 float MaxMass = 1.0f; //The normal, un-pressurized mass of a full water cell
-float MaxCompress = 0.1f; //How much excess water a cell can store, compared to the cell above it
+float MaxCompress = 0.02f; //How much excess water a cell can store, compared to the cell above it
 float MinMass = 0.0001f;  //Ignore cells that are almost dry
 float MinFlow = 0.1f;
 float MinDraw = 0.05f;
@@ -96,20 +96,27 @@ void InitWater() {
             }
         }
     }
-}
 
-void game_init_3d() {
-    printf("%s called\n", __FUNCTION__);
-
-    waterUpdateCounter = 0;
+    for (int i = 0; i < WATER_W+2; i++) {
+        for (int j = 0; j < WATER_H+2; j++) {
+            for (int k = 0; k < WATER_L+2; k++) {
+                if (i == 0 || k == 0 || i == WATER_W + 1 || k == WATER_L + 1) {
+                    water[i][j][k] = OCCUPIED;
+                }
+            }
+        }
+    }
 
     // memset(water, 0, sizeof(water));
-    for (int i = 0; i < WATER_W; i++) {
-        for (int j = 0; j < WATER_L; j++) {
+    for (int i = 1; i < WATER_W; i++) {
+        for (int j = 1; j < WATER_L; j++) {
             water[i][0][j] = OCCUPIED;
             water[i][WATER_H-1][j] = FILLED;
+            water[i][WATER_H-2][j] = FILLED;
             mass[i][WATER_H-1][j] = 1.0;
+            mass[i][WATER_H-2][j] = 1.0;
             new_mass[i][WATER_H-1][j] = 1.0;
+            new_mass[i][WATER_H-2][j] = 1.0;
             // water[i][1][j] = OCCUPIED;
         }
     }
@@ -117,6 +124,12 @@ void game_init_3d() {
     water[WATER_W-1][WATER_H-1][WATER_L-1] = FILLED;
     mass[WATER_W-1][WATER_H-1][WATER_L-1] = 1.0;
     new_mass[WATER_W-1][WATER_H-1][WATER_L-1] = 1.0;
+}
+
+void game_init_3d() {
+    printf("%s called\n", __FUNCTION__);
+
+    waterUpdateCounter = 0;
 
     // Define our custom camera to look into our 3d world
     // camera = (Camera){ { 18.0f, 18.0f, 18.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, 45.0f, 0 };
@@ -158,9 +171,9 @@ void UpdateWater() {
     float flow = 0;
     float remaining_mass;
 
-    for (int x = 0; x < MAP_W; x++) {
-        for (int y = 0; y < MAP_H; y++) {
-            for (int z = 0; z < MAP_L; z++) {
+    for (int x = 0; x < WATER_W; x++) {
+        for (int y = 0; y < WATER_H; y++) {
+            for (int z = 0; z < WATER_L; z++) {
                 if (water[x][y][z] == OCCUPIED) {
                     continue;
                 }
@@ -270,7 +283,9 @@ void UpdateWater() {
 
                     flow = Clamp(flow, 0, fmin(MaxSpeed, remaining_mass));
 
-                    // printf("[%d][%d](%.2f) -> [%d][%d](%.2f): %.2f\n", x, y, new_mass[x][y], x, y-1, new_mass[x][y-1], flow);
+                    if (flow > 0) {
+                        printf("[%d;%d;%d](%.2f) -> [%d;%d;%d](%.2f): %.2f\n", x, y, z, new_mass[x][y][z], x, y+1, z, new_mass[x][y+1][z], flow);
+                    }
                     new_mass[x][y][z] -= flow;
                     new_mass[x][y+1][z] += flow;
                     remaining_mass -= flow;
@@ -281,9 +296,9 @@ void UpdateWater() {
 
     memcpy(&mass, &new_mass, sizeof(mass));
 
-    for (int x = 1; x < MAP_W; x++) {
-        for (int y = 1; y < MAP_H; y++) {
-            for (int z = 1; z < MAP_L; z++) {
+    for (int x = 1; x < WATER_W; x++) {
+        for (int y = 1; y < WATER_H; y++) {
+            for (int z = 1; z < WATER_L; z++) {
                 if (water[x][y][z] == OCCUPIED) {
                     continue;
                 }
@@ -309,31 +324,6 @@ screen_t game_update_3d() {
     mouseRay = GetMouseRay(GetMousePosition(), camera);
     modelCollision = GetRayCollisionMesh(mouseRay, mesh, model.transform);
 
-    float speed = .1f;
-
-    if (IsKeyDown(KEY_A)) {
-        boxPos.x -= speed;
-    }
-    if (IsKeyDown(KEY_D)) {
-        boxPos.x += speed;
-    }
-    if (IsKeyDown(KEY_W)) {
-        boxPos.y -= speed;
-    }
-    if (IsKeyDown(KEY_S)) {
-        boxPos.y += speed;
-    }
-    if (IsKeyDown(KEY_Q)) {
-        boxPos.z -= speed;
-    }
-    if (IsKeyDown(KEY_E)) {
-        boxPos.z += speed;
-    }
-
-    Vector3 boxHalf = {BOX_SIZE/2, BOX_SIZE/2, BOX_SIZE/2};    // boxPos = center position
-    BoundingBox testBox = {Vector3Subtract(boxPos, boxHalf), Vector3Add(boxPos, boxHalf)};
-    info = CheckCollisionBoxMesh(testBox, mesh, model.transform);
-
     return game_screen_3d;
 }
 
@@ -343,8 +333,8 @@ void game_draw_3d() {
     BeginMode3D(camera);
 
         Vector3 position = { 0.0f, 0.0f, 0.0f };
-        // DrawModel(model, mapPosition, 1.0f, RED);
-        DrawModelWires(model, position, 1.0f, RED);
+        DrawModel(model, position, 1.0f, RED);
+        // DrawModelWires(model, position, 1.0f, RED);
 
         DrawGrid(20, 1.0f);
 
@@ -352,16 +342,40 @@ void game_draw_3d() {
             DrawSphere(modelCollision.point, 1, RED);
         }
 
+        // DrawCube(mapPosition, 10, sinf(waterUpdateCounter / 100.0f) * 10, 10, BLUE);
 
-        for (int i = 0; i < WATER_W; i++) {
-            for (int j = 0; j < WATER_H; j++) {
-                for (int k = 0; k < WATER_L; k++) {
+
+        for (int i = 0; i < WATER_W+2; i++) {
+            for (int k = 0; k < WATER_L+2; k++) {
+                for (int j = 0; j < WATER_H+2; j++) {
                     Vector3 cubePos = Vector3Add((Vector3){i*BOX_SIZE, j*BOX_SIZE, k*BOX_SIZE}, mapPosition);
-                    if (water[i][j][k] == FILLED) {
-                        Color color = BLUE;
+                    if (water[i][j][k] == FILLED && mass[i][j][k] >= MinDraw) {
+                        float column_mass = 0.0f;
+                        int column_height = 0;
+                        for (int j1 = j - 1; j1 > 0; j1--) {
+                            // calculate total water mass below current block;
+                            if (water[i][j1][k] == FILLED) {
+                                column_mass += mass[i][j1][k];
+                                column_height++;
+                            } else if (water[i][j1][k] == OCCUPIED) {
+                                break;
+                            }
+                        }
+
+                        // place box on top of the box below
+                        float dy = Clamp(column_height * BOX_SIZE - column_mass * BOX_SIZE, 0, column_height * BOX_SIZE);
+                        
+                        // align vertically to the botton
+                        dy += BOX_SIZE - (BOX_SIZE * mass[i][j][k]) / 2.0f;
+                        cubePos = Vector3Subtract(cubePos, (Vector3){0, dy, 0});
+                        Vector3 blueHSV = ColorToHSV(BLUE);
+                        float colorValue = Remap((float)j / WATER_H, 0.0f, 1.0f, 0.3f, 0.6f);
+                        float hue = Remap((float)i / WATER_W, 0.0f, 1.0f, blueHSV.x - 20, blueHSV.x + 20);
+                        float sat = Remap((float)k / (WATER_L+2), 0, 1, 0.5, 1);
+                        Color color = ColorFromHSV(hue, sat, colorValue);
                         // color.a = (unsigned char)(mass[i][j][k] * 255);
-                        // DrawCube(cubePos, BOX_SIZE, BOX_SIZE, BOX_SIZE, color);
-                        DrawCylinder(cubePos, BOX_SIZE, BOX_SIZE, BOX_SIZE * mass[i][j][k], 4, color);
+                        DrawCube(cubePos, BOX_SIZE, BOX_SIZE * mass[i][j][k], BOX_SIZE, color);
+                        // DrawCylinder(cubePos, BOX_SIZE, BOX_SIZE, BOX_SIZE * mass[i][j][k], 4, color);
                     // } else if (water[i][j][k] == OCCUPIED) {
                     //     DrawCubeWires(cubePos, BOX_SIZE, BOX_SIZE, BOX_SIZE, RED);
                     // } else {
@@ -383,9 +397,9 @@ void game_draw_3d() {
     DrawTexture(texture, SCREEN_WIDTH - texture.width - 20, 20, WHITE);
     DrawRectangleLines(SCREEN_WIDTH - texture.width - 20, 20, texture.width, texture.height, GREEN);
 
-    if (!modelCollision.hit) {
-        DrawText("No collision", 10, 42, 32, RED);
-    }
+    // if (!modelCollision.hit) {
+    //     DrawText("No collision", 10, 42, 32, RED);
+    // }
 
     DrawFPS(10, 10);
 }
