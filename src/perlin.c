@@ -94,9 +94,9 @@ float perlin(float x, float y) {
 
 Image GenImagePerlin(int width, int height) {
     Image image = GenImageColor(width, height, RAYWHITE);
-    for (int i = 0; i < W; i++)
+    for (int i = 0; i < width; i++)
     {
-        for (int j = 0; j < H; j++)
+        for (int j = 0; j < height; j++)
         {
             // float value1 = 
             float noise = (perlin(i / CELL_SIZE, j / CELL_SIZE)
@@ -106,7 +106,7 @@ Image GenImagePerlin(int width, int height) {
             // [0.0; 1.0] => [0; 255]
             unsigned char value = (unsigned char)(noise * 255);
             if (i == 0) {
-                printf("%f -> %d\n", noise, value);
+                // printf("%f -> %d\n", noise, value);
             }
             Color color = {value, value, value, 255};
             ImageDrawPixel(&image, i, j, color);
