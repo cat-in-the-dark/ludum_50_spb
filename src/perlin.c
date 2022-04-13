@@ -5,6 +5,7 @@
 #include "raylib.h"
 #include "raymath.h"
 
+#include "collisions.h"
 #include "const.h"
 
 #define W   SCREEN_WIDTH - 40
@@ -21,9 +22,6 @@ typedef struct {
 GradientCell gradients[GRID_SIZE][GRID_SIZE];
 
 Vector2 randomGradient(int ix, int iy) {
-    // assert(ix < GRID_SIZE);
-    // assert(iy < GRID_SIZE);
-
     if (!gradients[ix][iy].occupied) {
         float angle = Remap(GetRandomValue(0, 1000), 0, 1000, 0.0, PI * 2);
         gradients[ix][iy].coords.x = cosf(angle);
@@ -118,13 +116,46 @@ Image GenImagePerlin(int width, int height) {
     return image;
 }
 
+void DrawWaterLines(Mesh mesh, float waterLevel) {
+    Plane waterPlane = {(Vector3){0, 1, 0}, waterLevel};
+
+    for (int i = 0; i < mesh.triangleCount; i++) {
+        Vector3 a, b, c;
+        Vector3* vertdata = (Vector3*)mesh.vertices;
+
+        if (mesh.indices)
+        {
+            a = vertdata[mesh.indices[i*3 + 0]];
+            b = vertdata[mesh.indices[i*3 + 1]];
+            c = vertdata[mesh.indices[i*3 + 2]];
+        }
+        else
+        {
+            a = vertdata[i*3 + 0];
+            b = vertdata[i*3 + 1];
+            c = vertdata[i*3 + 2];
+        }
+
+        Triangle test = {a, b, c};
+        Line3d out = {0};
+
+        // printf("Check [%.2f;%.2f;%.2f][%.2f;%.2f;%.2f][%.2f;%.2f;%.2f] vs %.2f\n", a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, waterLevel);
+        if (CheckCollisionTrianglePlane(test, waterPlane, &out)) {
+            // printf("true: [%.2f;%.2f;%.2f][%.2f;%.2f;%.2f]\n", out.p1.x, out.p1.y, out.p1.z, out.p2.x, out.p2.y, out.p2.z);
+            DrawLine3D(out.p1, out.p2, BLUE);
+        } else {
+            // printf("false\n");
+        }
+    }
+}
+
 int main(int argc, char const *argv[])
 {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Window title");
     SetTargetFPS(60);
 
     // Define our custom camera to look into our 3d world
-    Camera camera = { { 18.0f, 18.0f, 18.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, 45.0f, 0 };
+    Camera camera = { { 18.0f, 18.0f, 18.0f }, { 8.0f, 0.0f, 8.0f }, { 0.0f, 1.0f, 0.0f }, 45.0f, 0 };
 
     Image image = GenImagePerlin(128, 128);
     Texture2D texture = LoadTextureFromImage(image);                // Convert image to texture (VRAM)
@@ -136,6 +167,8 @@ int main(int argc, char const *argv[])
     Vector3 mapPosition = { -8.0f, 0.0f, -8.0f };                   // Define model position
 
     UnloadImage(image);                     // Unload heightmap image from RAM, already uploaded to VRAM
+
+    float waterLevel = 2;
 
     SetCameraMode(camera, CAMERA_ORBITAL);  // Set an orbital camera mode
 
@@ -150,6 +183,8 @@ int main(int argc, char const *argv[])
         UpdateCamera(&camera);              // Update camera
         //----------------------------------------------------------------------------------
 
+        waterLevel += 0.005;
+
         // Draw
         //----------------------------------------------------------------------------------
         BeginDrawing();
@@ -157,8 +192,13 @@ int main(int argc, char const *argv[])
             ClearBackground(RAYWHITE);
 
             BeginMode3D(camera);
+                Vector3 pos = {0, 0, 0};
 
-                DrawModel(model, mapPosition, 1.0f, RED);
+                Color color = RED;
+                // color.a = 127;
+                DrawModel(model, pos, 1.0f, color);
+
+                DrawWaterLines(mesh, waterLevel);
 
                 DrawGrid(20, 1.0f);
 

@@ -4,6 +4,57 @@
 
 #include <stdio.h>
 
+float DistFromPlane(Plane plane, Vector3 point) {
+    float res = Vector3DotProduct(plane.norm, point) - plane.dist;
+    // printf("[%.2f;%.2f;%.2f] -> %f: %f\n", point.x, point.y, point.z, plane.dist, res);
+    return res;
+}
+
+bool CheckCollisionLinePlane(Line3d line, Plane plane, Vector3* outVec) {
+    float d1 = DistFromPlane(plane, line.p1);
+    float d2 = DistFromPlane(plane, line.p2);
+
+    // printf("%f;%f\n", d1, d2);
+
+    if (d1 * d2 > 0) {
+        return false;
+    }
+
+    float t = d1 / (d1 - d2); // 'time' of intersection point on the segment
+    *outVec = Vector3Add(line.p1, Vector3Scale(Vector3Subtract(line.p2, line.p1), t));
+
+    // printf("POC: [%.2f;%.2f;%.2f]\n", outVec->x, outVec->y, outVec->z);
+
+    return true;
+}
+
+bool CheckCollisionTrianglePlane(Triangle triangle, Plane plane, Line3d* outLine) {
+    Vector3 temp = {0};
+    int idx = 0;
+    if (CheckCollisionLinePlane((Line3d){triangle.p1, triangle.p2}, plane, &temp)) {
+        outLine->coords[idx++] = temp;
+    }
+
+    if (CheckCollisionLinePlane((Line3d){triangle.p2, triangle.p3}, plane, &temp)) {
+        outLine->coords[idx++] = temp;
+    }
+
+    if (idx == 0) {
+        return false;
+    }
+
+    if (idx == 2) {
+        return true;
+    }
+
+    if (CheckCollisionLinePlane((Line3d){triangle.p3, triangle.p1}, plane, &temp)) {
+        outLine->coords[idx++] = temp;
+        return true;
+    } else {
+        return false;
+    }
+}
+
 void Project(int vertexCount, Vector3* vertices, Vector3 axis, float* min, float* max) {
     *min = INFINITY;
     *max = -INFINITY;
